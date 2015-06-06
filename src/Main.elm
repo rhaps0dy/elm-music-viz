@@ -1,3 +1,4 @@
+-- | Nota: dir-li font magica de montjuic
 import Graphics.Element exposing (..)
 import WebGL exposing (webgl, trianglesEntity, pointsEntity, Shader)
 import Math.Vector2 exposing (vec2, Vec2)
@@ -8,6 +9,7 @@ import Math.Vector4 exposing (vec4, Vec4)
 import Math.Vector4 as V4
 import Math.Matrix4 exposing (Mat4)
 import Math.Matrix4 as M4
+import Math
 import Maybe exposing (Maybe)
 import Signal
 import Signal exposing ((<~), (~), Signal)
@@ -18,10 +20,19 @@ import Time
 import Random exposing (..)
 import List exposing (filter, map)
 import Debug
+import Color
 
-type alias Color = Vec4
+type alias GLColor = Vec4
 
-type alias Vertex = { col: Color
+fromColor : Color.Color -> GLColor
+fromColor c =
+    let (Color.RGBA r g b a) = toRGBA c
+        r' = toFloat r / 255
+        g' = toFloat g / 255
+        b' = toFloat b / 255
+    in  vec4 r' g' b' a
+
+type alias Vertex = { col: GLColor
                     , pos: Vec3
                     }
 
@@ -32,27 +43,20 @@ type alias Particle = { t0 : Time -- ^ Time the particle was born
 
 type alias Fountain = { pos : Vec3 -- ^ Position of the particle source
                       , avgDir : Vec3 -- ^ Average direction of the particles
-                      , col : Color -- ^ Color of the particles
+                      , col : GLColor -- ^ Color of the particles
                       , avgLifespan : Time -- ^ Average lifespan
                       , parts : List Particle -- ^ The particles this fountain has emitted
                       , seed : Random.Seed -- ^ Current random seed for generating more particles
+                      , lastParticleT : Time -- ^ Time the last particle was generated in
+                      , partGenInterval : Time -- ^ Time between generating particles
                       }
+
+type alias State = { camPos : Vec3
+                   , fountains : [Fountain]
+                   }
 
 gravity : Float
 gravity = -9.81
-
--- | Calculate the position of a single particle
-calcParticle : Fountain -- ^ The fountain this particle belongs to
-            -> Time -- ^ Current time to be calculated
-            -> Particle -- ^ Particle to be updated
-            -> Vertex -- ^ Resulting vertex to draw
-calcParticle {pos, col} t {t0, lifespan, dir0} =
-    let t' = t - t0
-        t'2 = t' * t'
-        x = V3.getX pos + (V3.getX dir0) * t'
-        y = V3.getY pos + (V3.getY dir0) * t' + (gravity * t'2)/2
-        z = V3.getZ pos + (V3.getZ dir0) * t'
-    in  {col = col, pos = vec3 x y z}
 
 -- | Generate a random vec3 from (-1, -1, -1) to (1, 1, 1)
 randVec3 : Generator Vec3
@@ -79,23 +83,34 @@ updateFountain t f =
     let pgen = particleGen f t
         (p, s) = generate pgen f.seed
         ps = filter (\{t0, lifespan} -> t0 + lifespan > t) f.parts
-    in  {f | parts <- p :: ps, seed <- s}
+        (lastT, ps') = if t - f.lastParticleT > f.partGenInterval then (t, p :: ps) else (f.lastParticleT, ps)
+    in  {f | parts <- ps', seed <- s, lastParticleT <- lastT}
 
-dtSignal : Signal Time
-dtSignal = Time.inSeconds <~ Time.fps 60
+-- | Render a fountain to an entity
+renderFountain : Mat4 -> Time -> Fountain -> Entity
+renderFountain cam t f = pointsEntity vertShad fragShad (map (calcParticle f t) f.parts) {camera = cam}
 
-clockSignal : Signal Time
-clockSignal = Time.inSeconds <~ Time.every (Time.second / 60)
-
-fountain : Signal Fountain
-fountain = Signal.foldp updateFountain
-             { pos = vec3 1 0 0
-             , avgDir = vec3 -1 1 0
-             , col = vec4 1 0 0 1
-             , avgLifespan = 2
-             , parts = []
-             , seed = Random.initialSeed 0
-             } clock
+fountains : [Fountain]
+fountains =
+    let colors = map fromColor [Color.lightRed, Color.green, Color.yellow,
+                                Color.lightPurple, Color.lightGray,
+                                Color.lightBrown, Color.lightBlue, Color.orange]
+        ncolors = length colors
+        color n = colors !! (n % ncolors)
+        fountain n =
+            let angle = degrees (360/12 * n)
+                pos = vec3 (cos angle) 0 (sin angle)
+                avgDir = vec3 (- cos angle) 2 (- sin angle)
+                          |> scale 0.5
+                col = color n
+            in  { pos = pos
+                , avgDir = avgDir
+                , col = col
+                , avgLifespan = 2
+                , parts = []
+                , seed = Random.initialSeed 0
+                } 
+    in  map fountain [1..12]
 
 cameraLookAt : Vec3 -- ^ Position of the camera
             -> Vec3 -- ^ Goal point the camera will look at
@@ -113,19 +128,17 @@ cameraPositionSignal = Signal.foldp addDir {x = 0, y = 0} (Signal.sampleOn delta
 addDir : {x: Int, y:Int} -> {x: Int, y:Int} -> {x:Int, y:Int}
 addDir a b = {x=a.x+b.x, y=a.y+b.y}
 
-particles : Signal (List Vertex)
-particles = map <~ (calcParticle <~ fountain ~ clock) ~ (.parts <~ fountain)
-
 main : Signal Element
-main = scene <~ Window.dimensions ~ cameraPositionSignal ~ particles
+main = scene <~ Window.dimensions ~ (Time.inSeconds <~ Time.fps 60)
 
-scene : (Int, Int) -> {x:Int, y:Int} -> List Vertex -> Element
-scene dimensions {x,y} vertices =
+scene : (Int, Int) -> dt -> 
+scene dimensions dt =
     let cam = cameraLookAt (vec3 (0.2*toFloat x) (0.2*toFloat y) 4) (vec3 0 0 0) dimensions
-        e = pointsEntity vertShad fragShad vertices {camera = cam}
     in  webgl dimensions [e]
 
-vertShad : Shader { pos : Vec3, col : Color} { camera: Mat4 } { f_col : Color }
+
+-- | Here be shaders
+vertShad : Shader { pos : Vec3, col : GLColor} { camera: Mat4 } { f_col : GLColor }
 vertShad = [glsl|
 
 precision mediump float;
@@ -143,7 +156,7 @@ void main() {
 
 |]
 
-fragShad : Shader {} { camera: Mat4 } { f_col : Color }
+fragShad : Shader {} { camera: Mat4 } { f_col : GLColor }
 fragShad = [glsl|
 
 precision mediump float;
