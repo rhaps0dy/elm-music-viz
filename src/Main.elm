@@ -45,7 +45,7 @@ init =
                           V3.scale 0.1
                 col = color n
             in  Fountain.init pos avgDir col 2 (1/40)
-    in  {fountains = map fountain [1..12]}
+    in  {fountains = map fountain [1]}
 
 cameraLookAt : Vec3 -- ^ Position of the camera
             -> Vec3 -- ^ Goal point the camera will look at
