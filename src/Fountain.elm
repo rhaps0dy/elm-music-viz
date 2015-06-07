@@ -1,5 +1,6 @@
 module Fountain (Model, init, Action, update, entity) where
 import WebGL exposing (webgl, trianglesEntity, pointsEntity, Shader, Entity)
+import WebGL
 import Time exposing (Time)
 import Time
 import Math.Vector2 exposing (vec2, Vec2)
@@ -15,9 +16,7 @@ import Random
 import List exposing (filter, map)
 import Debug
 
-type alias GLColor = Vec4
-
-type alias Vertex = { col: GLColor
+type alias Vertex = { col: WebGL.Color
                     , pos: Vec3
                     }
 
@@ -29,7 +28,7 @@ type alias Particle = { t0 : Time -- ^ Time the particle was born
 
 type alias Model = { pos : Vec3 -- ^ Position of the particle source
                    , avgDir : Vec3 -- ^ Average direction of the particles
-                   , col : GLColor -- ^ Color of the particles
+                   , col : WebGL.Color -- ^ Color of the particles
                    , avgLifespan : Time -- ^ Average lifespan
                    , parts : List Particle -- ^ The particles this fountain has emitted
                    , seed : Random.Seed -- ^ Current random seed for generating more particles
@@ -39,15 +38,6 @@ type alias Model = { pos : Vec3 -- ^ Position of the particle source
                    }
 
 type alias Action = Time
-
--- | Converts Elm color into WebGL color
-fromColor : Color.Color -> GLColor
-fromColor c =
-    let {red, green, blue, alpha} = Color.toRgb c
-        r = toFloat red / 255
-        g = toFloat green / 255
-        b = toFloat blue / 255
-    in  vec4 r g b alpha
 
 -- | Generate a random vec3 from (-1, -1, -1) to (1, 1, 1)
 randVec3 : Random.Generator Vec3
@@ -100,7 +90,7 @@ init : Vec3 -- ^ Position
 init pos dir col lifespan partdt =
     { pos = pos
     , avgDir = dir
-    , col = fromColor col
+    , col = WebGL.fromColor col
     , avgLifespan = lifespan
     , parts = []
     , seed = Random.initialSeed 0
@@ -119,7 +109,7 @@ entity cam f =
 
 type alias Uniforms = { camera: Mat4
                       , pos0: Vec3
-                      , col: GLColor
+                      , col: WebGL.Color
                       , time: Float
                       }
 
@@ -138,7 +128,7 @@ void main() {
     vec3 pos = pos0 + t * dir0;
     pos.y -= (9.81/2.) * t * t;
     gl_Position = camera * vec4(pos, 1);
-    gl_PointSize = 10.0;
+    gl_PointSize = 40.0 / gl_Position.z;
 }
 |]
 

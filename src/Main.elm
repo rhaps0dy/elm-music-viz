@@ -12,17 +12,41 @@ import Maybe exposing (Maybe)
 import Signal
 import Signal exposing ((<~), (~), Signal)
 import Window
-import Keyboard
 import Time exposing (Time)
 import Time
 import Random exposing (..)
 import List exposing (drop, head, length, map)
-import Debug
+import Mouse
 import Color
 import Fountain
 import Debug
 
-type alias Model = {fountains : List Fountain.Model}
+type alias Model = { fountains : List Fountain.Model
+                   , camY : Float
+                   , camAngle : Float
+                   , camZ : Float
+                   }
+
+type alias Input = { x: Int
+                   , y: Int
+                   , prevX: Int
+                   , prevY: Int
+                   , pressed: Bool
+                   , dt: Time
+                   }
+
+input : Signal Input
+input =
+    let dt = Time.inSeconds <~ Time.fps 30
+        updateMouse x (xolder, xold) = (xold, x)
+        msign = Signal.foldp updateMouse (0, 0)
+        xsign = msign Mouse.x
+        ysign = msign Mouse.y
+        x = snd <~ xsign
+        y = snd <~ ysign
+        prevX = fst <~ xsign
+        prevY = fst <~ ysign
+    in Signal.sampleOn dt <| Input <~ x ~ y ~ prevX ~ prevY ~ Mouse.isDown ~ dt
 
 (!!) : List a -> Int -> a
 (!!) l i =
@@ -30,22 +54,27 @@ type alias Model = {fountains : List Fountain.Model}
     -- Exception if pattern matching fails
     in  elem
 
-init : Model
-init =
-    let colors = [Color.lightRed, Color.green, Color.yellow,
-                  Color.lightPurple, Color.lightGray,
-                  Color.lightBrown, Color.lightBlue, Color.orange]
-        ncolors = length colors
+colors : List Color.Color
+colors = [Color.lightRed, Color.green, Color.yellow, Color.lightPurple,
+          Color.lightGray, Color.lightBrown, Color.lightBlue, Color.orange]
+
+init : Int -> Model
+init nfountains =
+    let ncolors = length colors
         color n = colors !! (n % ncolors)
         fountain n =
-            let angle = degrees (360.0/12.0 * toFloat n)
+            let angle = degrees (360.0/toFloat nfountains * toFloat n)
                 pos = vec3 (cos angle) 0 (sin angle) |>
-                          V3.scale 2
-                avgDir = vec3 -(cos angle) 2 -(sin angle) |>
-                          V3.scale 0.1
+                          V3.scale 5
+                avgDir = vec3 -(cos angle) 1 -(sin angle) |>
+                          V3.scale 3.4
                 col = color n
             in  Fountain.init pos avgDir col 2 (1/40)
-    in  {fountains = map fountain [1]}
+    in  { fountains = map fountain [1..nfountains]
+        , camY = 7
+        , camAngle = 0
+        , camZ = 7
+        }
 
 cameraLookAt : Vec3 -- ^ Position of the camera
             -> Vec3 -- ^ Goal point the camera will look at
@@ -57,26 +86,28 @@ cameraLookAt pos targ (w, h) =
         lookAt = M4.makeLookAt pos targ V3.j
     in  M4.mul perspective lookAt
   
--- cameraPositionSignal : Signal {x:Int, y:Int}
--- cameraPositionSignal = Signal.foldp addDir {x = 0, y = 0} (Signal.sampleOn deltaT Keyboard.arrows)
-
--- addDir : {x: Int, y:Int} -> {x: Int, y:Int} -> {x:Int, y:Int}
--- addDir a b = {x=a.x+b.x, y=a.y+b.y}
-
-update : Time -> Model -> Model
-update t m = {fountains = map (Fountain.update t) m.fountains}
+update : Input -> Model -> Model
+update inp m =
+    let fountains = map (Fountain.update inp.dt) m.fountains
+        camY = if inp.pressed then m.camY + toFloat (inp.y - inp.prevY) / 100.0 else m.camY
+        camAngle = if inp.pressed then m.camAngle + degrees (toFloat (inp.x - inp.prevX)) else m.camAngle
+    in { fountains = fountains
+       , camY = camY
+       , camAngle = camAngle
+       , camZ = m.camZ
+       }
 
 state : Signal Model
-state = Signal.foldp update init (Time.inSeconds <~ Time.fps 60)
+state = Signal.foldp update (init 20) input
 
 main : Signal Element
 main = view <~ Window.dimensions ~ state
 
-camera : (Int, Int) -> Mat4
-camera = cameraLookAt (vec3 10 10 0) (vec3 0 0 0)
-
 view : (Int, Int) -> Model -> Element
-view dimensions {fountains} =
-    let cam = camera dimensions
+view (w, h) {fountains, camY, camAngle, camZ} =
+    let x = camZ * cos camAngle
+        z = camZ * sin camAngle
+        cam = cameraLookAt (vec3 x camY z) (vec3 0 0 0) (w, h)
         fountainview = Fountain.entity cam
-    in  webgl dimensions <| map fountainview fountains
+        scene = webgl (w, h) <| map fountainview fountains
+    in  layers [color Color.black (spacer w h), scene]

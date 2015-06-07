@@ -25,6 +25,8 @@ documentation provided here.
 import Graphics.Element exposing (Element)
 import Native.WebGL
 import Task exposing (Task)
+import Math.Vector4 exposing (Vec4, vec4)
+import Color as ElmColor
 
 {-| Triangles are the basic building blocks of a mesh. You can put them together
 to form any shape. Each corner of a triangle is called a *vertex* and contains a
@@ -41,6 +43,16 @@ type alias Triangle attributes =
 type alias Line attributes =
     (attributes, attributes)
 
+type alias Color = Vec4
+
+-- | Converts Elm color into WebGL color
+fromColor : ElmColor.Color -> Color
+fromColor c =
+    let {red, green, blue, alpha} = ElmColor.toRgb c
+        r = toFloat red / 255
+        g = toFloat green / 255
+        b = toFloat blue / 255
+    in  vec4 r g b alpha
 
 {-| Apply a function to each vertex. This lets you transform the set of
 attributes associated with each corner of a triangle.
