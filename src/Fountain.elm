@@ -1,4 +1,4 @@
-module Fountain (Model, init, Action, update, entity) where
+module Fountain (Model, init, update, entity) where
 import WebGL exposing (webgl, trianglesEntity, pointsEntity, Shader, Entity)
 import WebGL
 import Time exposing (Time)
@@ -29,6 +29,7 @@ type alias Particle = { t0 : Time -- ^ Time the particle was born
 
 type alias Model = { pos : Vec3 -- ^ Position of the particle source
                    , avgDir : Vec3 -- ^ Average direction of the particles
+                   , avgDir0 : Vec3 -- ^ Initial average direction of the particles
                    , col : WebGL.Color -- ^ Color of the particles
                    , avgLifespan : Time -- ^ Average lifespan
                    , parts : List Particle -- ^ The particles this fountain has emitted
@@ -37,8 +38,6 @@ type alias Model = { pos : Vec3 -- ^ Position of the particle source
                    , partGenInterval : Time -- ^ Time between generating particles
                    , time : Time -- ^ Current time
                    }
-
-type alias Action = Time
 
 -- | Generate a random vec3 from (-1, -1, -1) to (1, 1, 1)
 randVec3 : Random.Generator Vec3
@@ -72,8 +71,8 @@ calcParticle {pos, col, time} {t0, lifespan, dir0} =
 
 
 -- | Step the fountain's time
-update : Action -> Model -> Model
-update dt f =
+update : Time -> Float -> Model -> Model
+update dt scale f =
     let t = f.time + dt
         pgen = particleGen f t
         (p, s) = Random.generate pgen f.seed
@@ -81,7 +80,13 @@ update dt f =
         (lastT, ps') = if t - f.lastParticleT > f.partGenInterval
                        then (t, p :: ps)
                        else (f.lastParticleT, ps)
-    in  {f | parts <- ps', seed <- s, lastParticleT <- lastT, time <- t}
+    in  {f | avgDir <- V3.scale scale f.avgDir0
+        , parts <- ps'
+        , seed <- s
+        , lastParticleT <- lastT
+        , partGenInterval <- (1.0/60.0) / scale
+        , time <- t
+        }
 
 -- | Create a fountain
 init : Vec3 -- ^ Position
@@ -94,6 +99,7 @@ init : Vec3 -- ^ Position
 init pos dir col lifespan partdt seed =
     { pos = pos
     , avgDir = dir
+    , avgDir0 = dir
     , col = WebGL.fromColor col
     , avgLifespan = lifespan
     , parts = []

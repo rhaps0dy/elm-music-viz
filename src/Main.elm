@@ -9,6 +9,7 @@ import Math.Vector4 as V4
 import Math.Matrix4 exposing (Mat4)
 import Math.Matrix4 as M4
 import Maybe exposing (Maybe)
+import Maybe
 import Signal
 import Signal exposing ((<~), (~), Signal)
 import Window
@@ -19,6 +20,17 @@ import List exposing (drop, head, length, map)
 import Mouse
 import Color
 import Fountain
+import WebAudio exposing ( createAnalyserNode
+                         , connectNodes
+                         , getDestinationNode
+                         , createHiddenMediaElementAudioSourceNode
+                         , setMediaElementIsLooping
+                         , setMediaElementSource
+                         , playMediaElement
+                         , MediaElementAudioSourceNode
+                         , AnalyserNode
+                         , getByteFrequencyData
+                         )
 import Debug
 
 type alias Model = { fountains : List Fountain.Model
@@ -32,8 +44,27 @@ type alias Input = { x: Int
                    , prevX: Int
                    , prevY: Int
                    , pressed: Bool
+                   , freqData: List Int
                    , dt: Time
                    }
+
+
+audioSrc : String
+audioSrc = "/audio/neko-nation.mp3"
+
+-- Web audio nodes
+analyser : AnalyserNode
+analyser = createAnalyserNode WebAudio.DefaultContext
+         |> connectNodes
+            (getDestinationNode WebAudio.DefaultContext) 0 0
+
+mediaStream : MediaElementAudioSourceNode
+mediaStream = createHiddenMediaElementAudioSourceNode
+                WebAudio.DefaultContext
+          |> setMediaElementIsLooping True
+          |> connectNodes analyser 0 0
+          |> setMediaElementSource audioSrc
+          |> playMediaElement
 
 input : Signal Input
 input =
@@ -46,7 +77,9 @@ input =
         y = snd <~ ysign
         prevX = fst <~ xsign
         prevY = fst <~ ysign
-    in Signal.sampleOn dt <| Input <~ x ~ y ~ prevX ~ prevY ~ Mouse.isDown ~ dt
+        freqData = (\_ -> getByteFrequencyData analyser) <~ dt
+    in Input <~ x ~ y ~ prevX ~ prevY ~ Mouse.isDown ~ freqData ~ dt
+        |> Signal.sampleOn dt
 
 (!!) : List a -> Int -> a
 (!!) l i =
@@ -85,10 +118,20 @@ cameraLookAt pos targ (w, h) =
         perspective = M4.makePerspective 60 aspectRatio 1.0 100000.0
         lookAt = M4.makeLookAt pos targ V3.j
     in  M4.mul perspective lookAt
-  
+
+processFrequencyData : List Int -> Int -> List Float
+processFrequencyData fd n =
+    let navg = length fd // n
+        pfd list = case list of
+                   [] -> []
+                   xs -> logBase 10000 (toFloat (List.sum <| List.take navg xs))
+                          :: pfd (List.drop navg xs)
+    in  pfd fd
+ 
 update : Input -> Model -> Model
 update inp m =
-    let fountains = map (Fountain.update inp.dt) m.fountains
+    let fdata = processFrequencyData inp.freqData (length m.fountains)
+        fountains = List.map2 (Fountain.update inp.dt) fdata m.fountains
         camY = if inp.pressed then m.camY + toFloat (inp.y - inp.prevY) / 70.0 else m.camY
         camAngle = if inp.pressed then m.camAngle + degrees (toFloat (inp.x - inp.prevX) / 10.0) else m.camAngle
     in { fountains = fountains
@@ -98,7 +141,7 @@ update inp m =
        }
 
 state : Signal Model
-state = Signal.foldp update (init 32) input
+state = Signal.foldp update (init 8) input
 
 main : Signal Element
 main = view <~ Window.dimensions ~ state
