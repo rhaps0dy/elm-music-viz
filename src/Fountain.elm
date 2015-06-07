@@ -24,6 +24,7 @@ type alias Vertex = { col: WebGL.Color
 type alias Particle = { t0 : Time -- ^ Time the particle was born
                       , lifespan : Time -- ^ Time the particle will live
                       , dir0 : Vec3 -- ^ Initial direction of the particle
+                      , pos0 : Vec3 -- ^ Initial position of the particle
                       }
 
 type alias Model = { pos : Vec3 -- ^ Position of the particle source
@@ -52,10 +53,12 @@ randVec3 = Random.customGenerator <| \s ->
 particleGen : Model -> Time -> Random.Generator Particle
 particleGen {pos, avgDir, col, avgLifespan} t0 = Random.customGenerator <| \s ->
     let (v, s') = Random.generate randVec3 s
+        (v', s'') = Random.generate randVec3 s
         varLifespan = avgLifespan * 0.1
-        (lifespan', s'') = Random.generate (Random.float -varLifespan varLifespan) s'
-        dir0 = V3.add avgDir (V3.scale 0.2 v)
-    in  ({t0=t0, lifespan=lifespan' + avgLifespan, dir0=dir0}, s'')
+        (lifespan', s''') = Random.generate (Random.float -varLifespan varLifespan) s''
+        dir0 = V3.add avgDir (V3.scale 0.3 v)
+        pos0 = V3.add pos (V3.scale 0.05 v')
+    in  ({t0=t0, lifespan=lifespan' + avgLifespan, dir0=dir0, pos0 = pos0}, s''')
 
 calcParticle : Model -- ^ The fountain this particle belongs to
             -> Particle -- ^ Particle to be updated
@@ -86,14 +89,15 @@ init : Vec3 -- ^ Position
     -> Color.Color -- ^ Fountain color
     -> Time -- ^ Average lifespan of particles
     -> Time -- ^ Time between generating particles
+    -> Int -- ^ Number to generate the seed
     -> Model
-init pos dir col lifespan partdt =
+init pos dir col lifespan partdt seed =
     { pos = pos
     , avgDir = dir
     , col = WebGL.fromColor col
     , avgLifespan = lifespan
     , parts = []
-    , seed = Random.initialSeed 0
+    , seed = Random.initialSeed seed
     , lastParticleT = 0.0
     , partGenInterval = partdt
     , time = 0.0
@@ -103,12 +107,10 @@ init pos dir col lifespan partdt =
 entity : Mat4 -> Model -> Entity
 entity cam f =
     pointsEntity vertShad fragShad f.parts { camera = cam
-                                           , pos0 = f.pos
                                            , col = f.col
                                            , time = f.time}
 
 type alias Uniforms = { camera: Mat4
-                      , pos0: Vec3
                       , col: WebGL.Color
                       , time: Float
                       }
@@ -118,10 +120,10 @@ vertShad : Shader Particle Uniforms {}
 vertShad  = [glsl|
 precision mediump float;
 uniform mat4 camera;
-uniform vec3 pos0;
 uniform float time;
 attribute float t0;
 attribute vec3 dir0;
+attribute vec3 pos0;
 
 void main() {
     float t = time - t0;

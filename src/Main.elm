@@ -69,7 +69,7 @@ init nfountains =
                 avgDir = vec3 -(cos angle) 1 -(sin angle) |>
                           V3.scale 3.4
                 col = color n
-            in  Fountain.init pos avgDir col 2 (1/40)
+            in  Fountain.init pos avgDir col 2 (1/40) n
     in  { fountains = map fountain [1..nfountains]
         , camY = 7
         , camAngle = 0
@@ -98,7 +98,7 @@ update inp m =
        }
 
 state : Signal Model
-state = Signal.foldp update (init 20) input
+state = Signal.foldp update (init 32) input
 
 main : Signal Element
 main = view <~ Window.dimensions ~ state
