@@ -112,40 +112,31 @@ init pos dir col lifespan partdt =
 -- | Render a fountain to an entity
 entity : Mat4 -> Model -> Entity
 entity cam f =
-    pointsEntity vertShad2 fragShad2 (map (calcParticle f) f.parts) {camera = cam}
+    pointsEntity vertShad fragShad (map (calcParticle f) f.parts) {camera = cam}
 
 -- | Shader that calculates the rendering of all of a font's particles
-vertShad : Shader { pos: Vec3
-                  , col: GLColor
-                  }
-                  { camera: Mat4
-                  } { f_col : GLColor }
-vertShad = [glsl|
+vertShad : Shader {pos : Vec3, col : GLColor} {camera : Mat4} {f_col : GLColor}
+vertShad  = [glsl|
 precision mediump float;
-
+uniform mat4 camera;
 attribute vec3 pos;
 attribute vec4 col;
-uniform mat4 camera;
 varying vec4 f_col;
 
 void main() {
-    gl_Position = vec4(0, 0, 0, 1);
+    gl_Position = camera * vec4(pos, 1);
     gl_PointSize = 10.0;
     f_col = col;
 }
 |]
 
--- | Just paints the particles with their corresponding color
-fragShad : Shader {}
-                  { camera: Mat4
-                  } { f_col : GLColor }
-fragShad = [glsl|
+fragShad : Shader {} {camera : Mat4} {f_col : GLColor}
+fragShad  = [glsl|
 precision mediump float;
-
 uniform mat4 camera;
 varying vec4 f_col;
 
 void main() {
-     gl_FragColor = vec4(1, 0, 0, 1);
+    gl_FragColor = f_col;
 }
 |]

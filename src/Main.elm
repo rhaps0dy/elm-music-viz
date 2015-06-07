@@ -39,9 +39,10 @@ init =
         color n = colors !! (n % ncolors)
         fountain n =
             let angle = degrees (360.0/12.0 * toFloat n)
-                pos = vec3 (cos angle) 0 (sin angle)
+                pos = vec3 (cos angle) 0 (sin angle) |>
+                          V3.scale 2
                 avgDir = vec3 -(cos angle) 2 -(sin angle) |>
-                            V3.scale 0.5
+                          V3.scale 0.1
                 col = color n
             in  Fountain.init pos avgDir col 2 (1/40)
     in  {fountains = map fountain [1..12]}
@@ -51,7 +52,7 @@ cameraLookAt : Vec3 -- ^ Position of the camera
             -> (Int, Int) -- ^ Window size
             -> Mat4
 cameraLookAt pos targ (w, h) =
-    let aspectRatio = toFloat h / toFloat w
+    let aspectRatio = toFloat w / toFloat h
         perspective = M4.makePerspective 60 aspectRatio 1.0 100000.0
         lookAt = M4.makeLookAt pos targ V3.j
     in  M4.mul perspective lookAt
@@ -72,7 +73,7 @@ main : Signal Element
 main = view <~ Window.dimensions ~ state
 
 camera : (Int, Int) -> Mat4
-camera = cameraLookAt (vec3 10 10 10) (vec3 0 0 0)
+camera = cameraLookAt (vec3 10 10 0) (vec3 0 0 0)
 
 view : (Int, Int) -> Model -> Element
 view dimensions {fountains} =
