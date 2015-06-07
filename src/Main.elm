@@ -72,7 +72,7 @@ main : Signal Element
 main = view <~ Window.dimensions ~ state
 
 camera : (Int, Int) -> Mat4
-camera = cameraLookAt (vec3 10 5 10) (vec3 0 0 0)
+camera = cameraLookAt (vec3 10 10 10) (vec3 0 0 0)
 
 view : (Int, Int) -> Model -> Element
 view dimensions {fountains} =

@@ -1,4 +1,4 @@
-module Fountain (Model, init, Action, update, entity, test) where
+module Fountain (Model, init, Action, update, entity) where
 import WebGL exposing (webgl, trianglesEntity, pointsEntity, Shader, Entity)
 import Time exposing (Time)
 import Time
@@ -17,11 +17,14 @@ import Debug
 
 type alias GLColor = Vec4
 
+type alias Vertex = { col: GLColor
+                    , pos: Vec3
+                    }
+
+
 type alias Particle = { t0 : Time -- ^ Time the particle was born
                       , lifespan : Time -- ^ Time the particle will live
                       , dir0 : Vec3 -- ^ Initial direction of the particle
-                      , pos0 : Vec3 -- ^ Initial position of the particle
-                      , col : GLColor -- ^ Color of the particle
                       }
 
 type alias Model = { pos : Vec3 -- ^ Position of the particle source
@@ -62,7 +65,18 @@ particleGen {pos, avgDir, col, avgLifespan} t0 = Random.customGenerator <| \s ->
         varLifespan = avgLifespan * 0.1
         (lifespan', s'') = Random.generate (Random.float -varLifespan varLifespan) s'
         dir0 = V3.add avgDir (V3.scale 0.2 v)
-    in  ({t0=t0, lifespan=lifespan' + avgLifespan, dir0=dir0, pos0=pos, col=col}, s'')
+    in  ({t0=t0, lifespan=lifespan' + avgLifespan, dir0=dir0}, s'')
+
+calcParticle : Model -- ^ The fountain this particle belongs to
+            -> Particle -- ^ Particle to be updated
+            -> Vertex -- ^ Resulting vertex to draw
+calcParticle {pos, col, time} {t0, lifespan, dir0} =
+    let t : Time
+        t = time - t0
+        p = V3.add pos <| V3.scale t dir0
+        p' = V3.setY (V3.getY p - (9.81/2) * t * t) p
+    in  {col = col, pos = p'}
+
 
 -- | Step the fountain's time
 update : Action -> Model -> Model
@@ -97,35 +111,24 @@ init pos dir col lifespan partdt =
 
 -- | Render a fountain to an entity
 entity : Mat4 -> Model -> Entity
-entity cam {parts, time} =
-    pointsEntity vertShad2 fragShad2 (map (\_ -> {pos = vec3 0 0 0}) parts) {camera = cam}
+entity cam f =
+    pointsEntity vertShad2 fragShad2 (map (calcParticle f) f.parts) {camera = cam}
 
 -- | Shader that calculates the rendering of all of a font's particles
-vertShad : Shader { t0: Time
-                  , lifespan: Time
-                  , dir0: Vec3
-                  , pos0 : Vec3
-                  , col : GLColor
+vertShad : Shader { pos: Vec3
+                  , col: GLColor
                   }
                   { camera: Mat4
-                  , time: Time
                   } { f_col : GLColor }
 vertShad = [glsl|
 precision mediump float;
 
-attribute float t0;
-attribute float lifespan;
-attribute vec3 dir0;
-attribute vec3 pos0;
+attribute vec3 pos;
 attribute vec4 col;
 uniform mat4 camera;
-uniform float time;
 varying vec4 f_col;
 
 void main() {
-/*    float dt = time - t0;
-    vec3 pos = pos0 + dir0 * dt;
-    pos.y -= (9.81/2.0) * dt * dt; */
     gl_Position = vec4(0, 0, 0, 1);
     gl_PointSize = 10.0;
     f_col = col;
@@ -135,41 +138,14 @@ void main() {
 -- | Just paints the particles with their corresponding color
 fragShad : Shader {}
                   { camera: Mat4
-                  , time: Time
                   } { f_col : GLColor }
 fragShad = [glsl|
 precision mediump float;
 
 uniform mat4 camera;
-uniform float time;
 varying vec4 f_col;
 
 void main() {
      gl_FragColor = vec4(1, 0, 0, 1);
-}
-|]
-
-test : Mat4 -> Entity
-test cam = pointsEntity vertShad2 fragShad2 [{pos = vec3 0 1 0}] {camera = cam}
-
-vertShad2 : Shader {pos : Vec3} {camera : Mat4} {}
-vertShad2  = [glsl|
-precision mediump float;
-uniform mat4 camera;
-attribute vec3 pos;
-
-void main() {
-    gl_Position = camera * vec4(pos, 1);
-    gl_PointSize = 10.0;
-}
-
-|]
-
-fragShad2 : Shader {} {camera : Mat4} {}
-fragShad2  = [glsl|
-precision mediump float;
-uniform mat4 camera;
-void main() {
-    gl_FragColor = vec4(1, 0, 0, 1);
 }
 |]
