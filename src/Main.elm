@@ -1,5 +1,5 @@
 import Graphics.Element exposing (..)
-import WebGL exposing (webgl, trianglesEntity, pointsEntity, Shader)
+import WebGL exposing (webgl, Shader)
 import Math.Vector2 exposing (vec2, Vec2)
 import Math.Vector2 as V2
 import Math.Vector3 exposing (vec3, Vec3)
@@ -50,7 +50,7 @@ type alias Input = { x: Int
 
 
 audioSrc : String
-audioSrc = "/audio/neko-nation.mp3"
+audioSrc = "/audio/mozart.mp3"
 
 -- Web audio nodes
 analyser : AnalyserNode
@@ -96,13 +96,13 @@ init nfountains =
     let ncolors = length colors
         color n = colors !! (n % ncolors)
         fountain n =
-            let angle = degrees (360.0/toFloat nfountains * toFloat n)
+            let angle = degrees (360.0/toFloat nfountains + 180.0) * toFloat n
                 pos = vec3 (cos angle) 0 (sin angle) |>
                           V3.scale 5
-                avgDir = vec3 -(cos angle) 1 -(sin angle) |>
+                avgDir = vec3 -(cos angle) 3 -(sin angle) |>
                           V3.scale 3.4
                 col = color n
-            in  Fountain.init pos avgDir col 2 (1/40) n
+            in  Fountain.init pos avgDir col 2 9999 n
     in  { fountains = map fountain [1..nfountains]
         , camY = 7
         , camAngle = 0
@@ -121,12 +121,13 @@ cameraLookAt pos targ (w, h) =
 
 processFrequencyData : List Int -> Int -> List Float
 processFrequencyData fd n =
-    let navg = length fd // n
+    let len = length fd
+        navg = len // (n * 2)
         pfd list = case list of
                    [] -> []
-                   xs -> logBase 10000 (toFloat (List.sum <| List.take navg xs))
+                   xs -> logBase 4000 (toFloat (List.sum <| List.take navg xs))
                           :: pfd (List.drop navg xs)
-    in  pfd fd
+    in  pfd <| List.take (len // 2) <| List.drop (len // 4) fd
  
 update : Input -> Model -> Model
 update inp m =
@@ -141,7 +142,7 @@ update inp m =
        }
 
 state : Signal Model
-state = Signal.foldp update (init 8) input
+state = Signal.foldp update (init 32) input
 
 main : Signal Element
 main = view <~ Window.dimensions ~ state

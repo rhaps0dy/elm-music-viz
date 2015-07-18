@@ -10,7 +10,7 @@ Elm.Native.WebGL.make = function(elm) {
 
   // setup logging
   function LOG(msg) {
-//    console.log(msg);
+    // console.log(msg);
   }
 
   var createNode = Elm.Native.Graphics.Element.make(elm).createNode;
@@ -39,7 +39,7 @@ Elm.Native.WebGL.make = function(elm) {
     });
   }
 
-  function entity(primitive, vert, frag, buffer, uniforms) {
+  function entity(vert, frag, buffer, uniforms) {
 
     if (!buffer.guid) {
       buffer.guid = Utils.guid();
@@ -49,15 +49,10 @@ Elm.Native.WebGL.make = function(elm) {
       vert: vert,
       frag: frag,
       buffer: buffer,
-      uniforms: uniforms,
-      primitive: primitive
+      uniforms: uniforms
     };
 
   }
-
-  function trianglesEntity(v, f, b, u) { return entity("TRIANGLES", v, f, b, u); }
-  function linesEntity(v, f, b, u) { return entity("LINES", v, f, b, u); }
-  function pointsEntity(v, f, b, u) { return entity("POINTS", v, f, b, u); }
 
   function do_texture (gl, img) {
 
@@ -104,79 +99,104 @@ Elm.Native.WebGL.make = function(elm) {
 
     return program;
 
-  }
+	}
 
-  function pusher_function(data, name, n_elems_tuple, n_dims) {
-    function push_n_dims(e) {
-      if(n_dims > 1) {
-        for(var d=0; d<n_dims; d++)
-          f += "data.push(" + e +"[name][" + d + "]); ";
-      } else {
-        f += "data.push(" + e + "[name]); ";
-      }
-    }
-          
-    f = "(function(elem) { ";
-    if(n_elems_tuple === 1) {
-        push_n_dims("elem");
-    } else {
-      for(var i=0; i<n_elems_tuple; i++)
-          push_n_dims("elem._" + i);
-    }
-    f += "})"
-    return eval(f);
-  }
+  function get_entity_info(gl, entity_type) {
+	switch(entity_type) {
+		case 'Triangle': return { mode: gl.TRIANGLES, elemSize: 3 }; 
+		case 'LineStrip' : return { mode: gl.LINE_STRIP, elemSize: 1 };
+		case 'LineLoop' : return { mode: gl.LINE_LOOP, elemSize: 1 };
+		case 'Points' : return { mode: gl.POINTS, elemSize: 1 };
+		case 'Lines': return { mode: gl.LINES, elemSize: 2 }; 
+		case 'TriangleStrip': return { mode: gl.TRIANGLE_STRIP, elemSize: 1 }; 
+		case 'TriangleFan': return { mode: gl.TRIANGLE_FAN, elemSize: 1 }; 
+	}
+  }; 
 
-  function do_bind (gl, program, bufferElems, primitive) {
+  function get_attribute_info(gl, type) {
+		switch(type) {
+			case gl.FLOAT:      return { size: 1, type: Float32Array, baseType: gl.FLOAT };
+			case gl.FLOAT_VEC2: return { size: 2, type: Float32Array, baseType: gl.FLOAT };
+			case gl.FLOAT_VEC3: return { size: 3, type: Float32Array, baseType: gl.FLOAT };
+			case gl.FLOAT_VEC4: return { size: 4, type: Float32Array, baseType: gl.FLOAT };			
+			case gl.INT: 		return { size: 1, type: Int32Array, baseType: gl.INT };
+			case gl.INT_VEC2: 	return { size: 2, type: Int32Array, baseType: gl.INT };
+			case gl.INT_VEC3: 	return { size: 3, type: Int32Array, baseType: gl.INT };
+			case gl.INT_VEC4: 	return { size: 4, type: Int32Array, baseType: gl.INT };			
+		}
+	  };
+      
+  /**
+        Form the buffer for a given attribute. 
+        
+        @param gl gl context
+        @param attribute the attribute to bind to. We use its name to grab the record by name and also to know
+                how many elements we need to grab.
+        @param bufferElems The list coming in from elm. 
+        @param elem_length The length of the number of vertices that complete one 'thing' based on the drawing mode. 
+            ie, 2 for Lines, 3 for Triangles, etc. 
+  */
+  function do_bind_attribute (gl, attribute, bufferElems, elem_length) {      
+    var idxKeys = []; 
+    for(var i = 0;i < elem_length;i++) idxKeys.push('_'+i); 
 
-    var buffers = {};
+    function dataFill(data, cnt, fillOffset, elem, key) {						
+        if(elem_length == 1)
+            for(var i = 0;i < cnt;i++)
+                data[fillOffset++] = cnt === 1 ? elem[key] : elem[key][i];			
+        else
+            idxKeys.forEach( function(idx) {
+                for(var i = 0;i < cnt;i++) 
+                    data[fillOffset++] = (cnt === 1 ? elem[idx][key] : elem[idx][key][i]);						
+            }); 		
+    };
 
-    var n_elems_tuple;
-    switch (primitive) {
-      case gl.POINTS:    n_elems_tuple = 1; break;
-      case gl.LINES:     n_elems_tuple = 2; break;
-      case gl.TRIANGLES: n_elems_tuple = 3; break;
-      default: LOG("Bad primitive type"); break;
-    }
+    var attributeInfo = get_attribute_info(gl, attribute.type); 
 
-    var attributes = gl.getProgramParameter(program, gl.ACTIVE_ATTRIBUTES);
-    for (var i = 0; i < attributes; i += 1) {
-      var attribute = gl.getActiveAttrib(program, i);
-      var n_dims;
-      switch (attribute.type) {
-        case gl.FLOAT: n_dims = 1; break;
-        case gl.FLOAT_VEC2: n_dims = 2; break;
-        case gl.FLOAT_VEC3: n_dims = 3; break;
-        case gl.FLOAT_VEC4: n_dims = 4; break;
-      default: LOG("Bad buffer type: " + attribute.type); LOG(gl); break;
-      }
-
-      // Might want to invert the loop
-      // to build the array buffer first
-      // and then bind each one-at-a-time
-      var data = [];
-      A2(List.map,
-         pusher_function(data, attribute.name, n_elems_tuple, n_dims),
-         bufferElems);
-      var array = new Float32Array(data);
-
-      var buffer = gl.createBuffer();
-      LOG("Created attribute buffer " + attribute.name);
-      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-      gl.bufferData(gl.ARRAY_BUFFER, array, gl.STATIC_DRAW);
-
-      buffers[attribute.name] = buffer;
+    if(attributeInfo === undefined) {
+        throw error("No info available for: " + attribute.type); 
     }
 
-    var numIndices = n_elems_tuple * List.length(bufferElems);
-    var indices = [];
+    var data_idx = 0; 
+    var array = new attributeInfo.type( List.length(bufferElems) * attributeInfo.size * elem_length);
+      
+    A2(List.map, function(elem) {
+        dataFill(array, attributeInfo.size, data_idx, elem, attribute.name); 
+        data_idx += attributeInfo.size * elem_length;
+    }, bufferElems);
+
+    var buffer = gl.createBuffer();
+    LOG("Created attribute buffer " + attribute.name);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, array, gl.STATIC_DRAW);
+    return buffer; 
+  };
+  
+  /**
+    This sets up the binding cacheing buffers. 
+    
+    We don't actually bind any buffers now except for the indices buffer, which we fill with 0..n. The problem
+    with filling the buffers here is that it is possible to have a buffer shared between two webgl shaders; which
+    could have different active attributes. If we bind it here against a particular program, we might not bind 
+    them all. That final bind is now done right before drawing. 
+    
+    @param gl gl context
+    @param bufferElems The list coming in from elm. 
+    @param elem_length The length of the number of vertices that complete one 'thing' based on the drawing mode. 
+            ie, 2 for Lines, 3 for Triangles, etc. 
+  */
+  function do_bind_setup (gl, bufferElems, elem_length) {
+	var buffers = {};
+    
+    var numIndices = elem_length * List.length(bufferElems);
+    var indices = new Uint16Array(numIndices);
     for (var i = 0; i < numIndices; i += 1) {
-      indices.push(i);
+      indices[i] = i; 
     }
     LOG("Created index buffer");
     var indexBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
 
     var bufferObject = {
       numIndices: numIndices,
@@ -197,7 +217,9 @@ Elm.Native.WebGL.make = function(elm) {
     LOG("Drawing");
 
     function drawEntity(entity) {
-
+      if(List.length(entity.buffer._0) === 0)
+          return;
+      
       var program;
       if (entity.vert.id && entity.frag.id) {
         var progid = entity.vert.id + '#' + entity.frag.id;
@@ -285,49 +307,40 @@ Elm.Native.WebGL.make = function(elm) {
             break;
         }
       }
-
+	  var entityType = get_entity_info(gl, entity.buffer.ctor); 
       var buffer = model.cache.buffers[entity.buffer.guid];
+      
       if (!buffer) {
-        buffer = do_bind(gl, program, entity.buffer, gl[entity.primitive]);
+        buffer = do_bind_setup(gl, entity.buffer._0, entityType.elemSize);
         model.cache.buffers[entity.buffer.guid] = buffer;
       }
+
+      // 72% begin
 
       var numIndices = buffer.numIndices;
       var indexBuffer = buffer.indexBuffer;
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
 
       var numAttributes = gl.getProgramParameter(program, gl.ACTIVE_ATTRIBUTES);
+        
       for (var i = 0; i < numAttributes; i += 1) {
         var attribute = gl.getActiveAttrib(program, i);
+        
         var attribLocation = gl.getAttribLocation(program, attribute.name);
         gl.enableVertexAttribArray(attribLocation);
-        var attributeBuffer = buffer.buffers[attribute.name];
-
-        switch (attribute.type) {
-          case gl.FLOAT:
-            gl.bindBuffer(gl.ARRAY_BUFFER, attributeBuffer);
-            gl.vertexAttribPointer(attribLocation, 1, gl.FLOAT, false, 0, 0);
-            break;
-          case gl.FLOAT_VEC2:
-            gl.bindBuffer(gl.ARRAY_BUFFER, attributeBuffer);
-            gl.vertexAttribPointer(attribLocation, 2, gl.FLOAT, false, 0, 0);
-            break;
-          case gl.FLOAT_VEC3:
-            gl.bindBuffer(gl.ARRAY_BUFFER, attributeBuffer);
-            gl.vertexAttribPointer(attribLocation, 3, gl.FLOAT, false, 0, 0);
-            break;
-          case gl.FLOAT_VEC4:
-            gl.bindBuffer(gl.ARRAY_BUFFER, attributeBuffer);
-            gl.vertexAttribPointer(attribLocation, 4, gl.FLOAT, false, 0, 0);
-            break;
-          default:
-            LOG("Unsupported attribute type: " + attribute.type);
-            break;
+                
+        if(buffer.buffers[attribute.name] === undefined) {                 
+            buffer.buffers[attribute.name] = do_bind_attribute (gl, attribute, entity.buffer._0, entityType.elemSize);
         }
-      }
+        var attributeBuffer = buffer.buffers[attribute.name];         
+	var attributeInfo = get_attribute_info(gl, attribute.type); 
 
+	bindBuffer(gl.ARRAY_BUFFER, attributeBuffer);
+	gl.vertexAttribPointer(attribLocation, attributeInfo.size, attributeInfo.baseType, false, 0, 0);
+      }
+      gl.drawElements(entityType.mode, numIndices, gl.UNSIGNED_SHORT, 0);
       
-      gl.drawElements(gl[entity.primitive], numIndices, gl.UNSIGNED_SHORT, 0);
+      // 72% end
 
     }
 
@@ -411,12 +424,10 @@ Elm.Native.WebGL.make = function(elm) {
   }
 
   return elm.Native.WebGL.values = {
-    unsafeCoerceGLSL: unsafeCoerceGLSL,
-    loadTexture: loadTexture,
-    trianglesEntity: F4(trianglesEntity),
-    linesEntity: F4(linesEntity),
-    pointsEntity: F4(pointsEntity),
-    webgl: F2(webgl),
+    unsafeCoerceGLSL:unsafeCoerceGLSL,
+    loadTexture:loadTexture,
+    entity:F4(entity),
+    webgl:F2(webgl)
   };
 
 };

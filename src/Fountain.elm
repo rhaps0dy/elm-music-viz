@@ -1,5 +1,6 @@
 module Fountain (Model, init, update, entity) where
-import WebGL exposing (webgl, trianglesEntity, pointsEntity, Shader, Entity)
+
+import WebGL exposing (RenderableType(Points), Entity, Shader)
 import WebGL
 import Time exposing (Time)
 import Time
@@ -59,17 +60,6 @@ particleGen {pos, avgDir, col, avgLifespan} t0 = Random.customGenerator <| \s ->
         pos0 = V3.add pos (V3.scale 0.05 v')
     in  ({t0=t0, lifespan=lifespan' + avgLifespan, dir0=dir0, pos0 = pos0}, s''')
 
-calcParticle : Model -- ^ The fountain this particle belongs to
-            -> Particle -- ^ Particle to be updated
-            -> Vertex -- ^ Resulting vertex to draw
-calcParticle {pos, col, time} {t0, lifespan, dir0} =
-    let t : Time
-        t = time - t0
-        p = V3.add pos <| V3.scale t dir0
-        p' = V3.setY (V3.getY p - (9.81/2) * t * t) p
-    in  {col = col, pos = p'}
-
-
 -- | Step the fountain's time
 update : Time -> Float -> Model -> Model
 update dt scale f =
@@ -112,9 +102,9 @@ init pos dir col lifespan partdt seed =
 -- | Render a fountain to an entity
 entity : Mat4 -> Model -> Entity
 entity cam f =
-    pointsEntity vertShad fragShad f.parts { camera = cam
-                                           , col = f.col
-                                           , time = f.time}
+    WebGL.entity vertShad fragShad (Points f.parts) { camera = cam
+                                                    , col = f.col
+                                                    , time = f.time}
 
 type alias Uniforms = { camera: Mat4
                       , col: WebGL.Color
